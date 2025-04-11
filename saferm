@@ -1,0 +1,59 @@
+saferm() {
+    local recursive=0
+    local paths=()
+    local after_double_dash=0
+
+    # 解析参数，识别递归选项和路径
+    for arg in "$@"; do
+        if (( after_double_dash )); then
+            paths+=("$arg")
+            continue
+        fi
+        case "$arg" in
+            --)
+                after_double_dash=1
+                ;;
+            --recursive)
+                recursive=1
+                ;;
+            -[rR]|-[rR][![:alnum:]]*)
+                recursive=1 
+                ;;
+            -*)
+                [[ "$arg" =~ ^-[^rR]*[rR] ]] && recursive=1
+                ;;
+            *)
+                paths+=("$arg")
+                ;;
+        esac
+    done
+
+    # 非递归删除直接放行
+    if (( !recursive )); then
+        command rm "$@"
+        return $?
+    fi
+
+    # 检查所有路径的安全性
+    for path in "${paths[@]}"; do
+        local abs_path
+        abs_path=$(realpath -s -m -- "$path" 2>/dev/null)
+        if [[ -z "$abs_path" ]]; then
+            continue
+        fi
+        if [[ "$abs_path" == "/" ]]; then
+            echo "Error: SAFERM has blocked recursive deletion of ROOT (/)!" >&2
+            return 1
+        fi
+        if [[ "$(dirname -- "$abs_path")" == "/" ]]; then
+            echo "Error: SAFERM has blocked recursive deletion of top-level directory $abs_path !" >&2
+            echo "If you really want to delete $abs_path, use \"/usr/bin/rm -r $abs_path\" " >&2
+            return 1
+        fi
+    done
+
+    # 安全路径则执行原版rm
+    command rm "$@"
+}
+
+alias rm='saferm'
